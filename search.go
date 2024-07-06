@@ -1,20 +1,42 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"log"
-	"strings"
+	"net/http"
 	"os"
+	"strings"
 
 	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/zmb3/spotify/v2"
 )
 
+type roundtripLogger struct {
+	Transport http.RoundTripper
+}
+
+var dFlag = flag.Bool("d", false, "Enable debugging")
+
+func (r roundtripLogger) RoundTrip(request *http.Request) (*http.Response, error) {
+	fmt.Println("request", request.URL.String())
+	res, err := r.Transport.RoundTrip(request)
+	var bufReader bytes.Buffer
+	io.Copy(&bufReader, res.Body)
+	fmt.Println("response", bufReader.String())
+	// res.Body is already closed. you need to make a copy again to pass it for the code
+	res.Body = io.NopCloser(bytes.NewReader(bufReader.Bytes()))
+	return res, err
+}
+
 func main() {
-	text := strings.Join(os.Args, " ")
+	flag.Parse()
+	text := strings.Join(os.Args[1:], " ")
 	if text == "" {
 		log.Fatal("Please supply search terms on the command line")
 	}
@@ -30,8 +52,11 @@ func main() {
 	}
 
 	httpClient := spotifyauth.New().Client(ctx, token)
+	if (*dFlag) {
+		httpClient.Transport = roundtripLogger{Transport: httpClient.Transport}
+	}
 	client := spotify.New(httpClient)
-	results, err := client.Search(ctx, text, spotify.SearchTypePlaylist|spotify.SearchTypeAlbum)
+	results, err := client.Search(ctx, text, spotify.SearchTypeArtist|spotify.SearchTypeAlbum)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,7 +66,7 @@ func main() {
 		fmt.Println("Albums:")
 		for _, item := range results.Albums.Albums {
 			fmt.Println("   ", item.Name)
-			fmt.Println("    Artists:")
+			fmt.Println("    >> Artists:")
 			for _, artist := range item.Artists {
 				fmt.Println("        ", artist.Name)
 			}
@@ -49,7 +74,7 @@ func main() {
 			if err != nil {
 				log.Print(err)
 			}
-			fmt.Println("    Tracks:")
+			fmt.Println("    >> Tracks:")
 			for _, track := range fa.Tracks.Tracks { // Assume just 1 page
 				fmt.Println("        ", track.Name)
 			}
