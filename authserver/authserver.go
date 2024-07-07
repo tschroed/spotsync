@@ -71,28 +71,25 @@ func New(opts Options) *AuthServer {
 	s := &AuthServer{opts: opts}
 	s.state = "lololol"
 	s.ch = make(chan *spotify.Client)
+	redirectURI := fmt.Sprintf("http://%s:%d%s", s.opts.RedirectHost, s.opts.Port, s.opts.AuthPath)
+	s.auth = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI), spotifyauth.WithScopes(s.opts.Scopes...))
 	return s
 }
 
-// Start starts the authorization server in the background.
+// Start starts the authorization server.
 func (s *AuthServer) Start() error {
-	redirectURI := fmt.Sprintf("http://%s:%d%s", s.opts.RedirectHost, s.opts.Port, s.opts.AuthPath)
-	s.auth = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI), spotifyauth.WithScopes(s.opts.Scopes...))
 	http.HandleFunc(s.opts.AuthPath, s.completeAuth)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Got request for:", r.URL.String())
 	})
-	go func() {
-		err := http.ListenAndServe(fmt.Sprintf(":%d", s.opts.Port), nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
+	err := http.ListenAndServe(fmt.Sprintf(":%d", s.opts.Port), nil)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-// AuthURL returns the Spotify authorization URL suitable for displaying to
-// the user.
+// AuthURL retuns the authorization URL.
 func (s *AuthServer) AuthURL() string {
 	return s.auth.AuthURL(s.state)
 }

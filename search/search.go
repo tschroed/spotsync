@@ -12,7 +12,7 @@ import (
 
 	"github.com/zmb3/spotify/v2"
 
-	"github.com/tschroed/spotsync"
+	"github.com/tschroed/spotsync/authserver"
 )
 
 var (
@@ -34,9 +34,13 @@ func main() {
 		Scopes:       []string{spotifyauth.ScopeUserLibraryModify},
 	}
 	server := authserver.New(o)
-	if err := server.Start(); err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		err := server.Start()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
 	url := server.AuthURL()
 	fmt.Println("Please log in to Spotify by visiting the following page in your browser:", url)
 
