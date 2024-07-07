@@ -12,7 +12,7 @@ func TestAlbumIterator(t *testing.T) {
 	want := []AlbumMetadata{
 		AlbumMetadata{
 			Artist: "Artist1",
-			Name: "Title1",
+			Name:   "Title1",
 			Tracks: []string{
 				"Track1",
 				"Track2",
@@ -20,7 +20,7 @@ func TestAlbumIterator(t *testing.T) {
 		},
 		AlbumMetadata{
 			Artist: "Artist2",
-			Name: "Title2",
+			Name:   "Title2",
 			Tracks: []string{
 				"Track3",
 				"Track4",
@@ -47,7 +47,7 @@ func TestDirectoryAlbumIterator(t *testing.T) {
 	want := []AlbumMetadata{
 		AlbumMetadata{
 			Artist: "Artist1",
-			Name: "Title1",
+			Name:   "Title1",
 			Tracks: []string{
 				"Track1",
 				"Track2",
@@ -55,7 +55,7 @@ func TestDirectoryAlbumIterator(t *testing.T) {
 		},
 		AlbumMetadata{
 			Artist: "Artist2 Two",
-			Name: "Title2 Two",
+			Name:   "Title2 Two",
 			Tracks: []string{
 				"Track3 Three",
 				"Track4",
@@ -63,7 +63,7 @@ func TestDirectoryAlbumIterator(t *testing.T) {
 		},
 		AlbumMetadata{
 			Artist: "Artist2 Two",
-			Name: "Title3Three",
+			Name:   "Title3Three",
 			Tracks: []string{
 				"Track5 Five",
 				"Track6 6",
@@ -87,7 +87,7 @@ func TestDirectoryAlbumIterator(t *testing.T) {
 			continue
 		}
 		for _, track := range alb.Tracks {
-			if _, err := os.Create(fmt.Sprintf("%s/%s/%s/%s%s%s", tmp, alb.Artist, alb.Name, prefixes[i % len(prefixes)], track, suffixes[i % len(suffixes)])) ; err != nil {
+			if _, err := os.Create(fmt.Sprintf("%s/%s/%s/%s%s%s", tmp, alb.Artist, alb.Name, prefixes[i%len(prefixes)], track, suffixes[i%len(suffixes)])); err != nil {
 				t.Error(err)
 				continue
 			}
