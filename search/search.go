@@ -13,14 +13,20 @@ import (
 	"github.com/zmb3/spotify/v2"
 
 	"github.com/tschroed/spotsync/authserver"
+	"github.com/tschroed/spotsync/media"
 )
 
 var (
 	dFlag = flag.Bool("d", false, "Enable debugging")
+	lFlag = flag.String("l", "/usr/local/mp3", "Location of mp3 library")
 )
 
 func main() {
 	flag.Parse()
+	m := media.NewDirectoryAlbumProducer(*lFlag, os.ReadDir)
+	go func() {
+		m.Start()
+	}()
 	text := strings.Join(os.Args[1:], " ")
 	if text == "" {
 		log.Fatal("Please supply search terms on the command line")
@@ -31,7 +37,7 @@ func main() {
 		Port:         8080,
 		AuthPath:     "/callback",
 		RedirectHost: "192.168.1.101",
-		Scopes:       []string{spotifyauth.ScopeUserLibraryModify},
+		Scopes:       []string{spotifyauth.ScopeUserLibraryRead, spotifyauth.ScopeUserLibraryModify},
 	}
 	server := authserver.New(o)
 	go func() {
@@ -57,13 +63,19 @@ func main() {
 	}
 	fmt.Println("You are logged in as:", user.ID)
 
-	results, err := client.Search(ctx, text, spotify.SearchTypeArtist|spotify.SearchTypeAlbum)
-	if err != nil {
-		log.Fatal(err)
-	}
+	for alb := range m.Albums() {
+		text := fmt.Sprintf("artist:\"%s\" album:\"%s\"", alb.Artist, alb.Name)
+		fmt.Println(">> Searching for", text)
+		results, err := client.Search(ctx, text, spotify.SearchTypeArtist|spotify.SearchTypeAlbum)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// handle album results
-	if results.Albums != nil {
+		// handle album results
+		if results.Albums == nil || len(results.Albums.Albums) == 0 {
+			fmt.Println("!! Failed to find", text)
+			continue
+		}
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Println("Albums:")
 		toAdd := make([]spotify.SimpleAlbum, 0)
@@ -72,6 +84,15 @@ func main() {
 			fmt.Println("    >> Artists:")
 			for _, artist := range item.Artists {
 				fmt.Println("        ", artist.Name)
+			}
+			has, err := client.UserHasAlbums(ctx, item.ID)
+			if err != nil {
+				fmt.Println("err:", err)
+				continue
+			} 
+			if has[0] {
+				fmt.Println("user already has album, considered a match")
+				break
 			}
 			fa, err := client.GetAlbum(ctx, item.ID)
 			if err != nil {
@@ -86,6 +107,7 @@ func main() {
 			r = strings.TrimSpace(r)
 			if r == "y" || r == "Y" {
 				toAdd = append(toAdd, item)
+				break
 			}
 		}
 		if len(toAdd) > 0 {
