@@ -13,10 +13,16 @@ import (
 	"github.com/zmb3/spotify/v2"
 
 	"github.com/tschroed/spotsync/authserver"
+	"github.com/tschroed/spotsync/cache"
 	"github.com/tschroed/spotsync/media"
 )
 
+const (
+	searchType = spotify.SearchTypeArtist | spotify.SearchTypeAlbum
+)
+
 var (
+	cFlag = flag.String("c", "/home/trevors/spotify.db", "Spotify cache sqlite database")
 	dFlag = flag.Bool("d", false, "Enable debugging")
 	lFlag = flag.String("l", "/usr/local/mp3", "Location of mp3 library")
 )
@@ -63,12 +69,31 @@ func main() {
 	}
 	fmt.Println("You are logged in as:", user.ID)
 
+	c, err := cache.New(*cFlag, cache.Options{Debug: *dFlag})
+	if err != nil {
+		panic(err)
+	}
+
 	for alb := range m.Albums() {
 		text := fmt.Sprintf("artist:\"%s\" album:\"%s\"", alb.Artist, alb.Name)
 		fmt.Println(">> Searching for", text)
-		results, err := client.Search(ctx, text, spotify.SearchTypeArtist|spotify.SearchTypeAlbum)
+
+		// TODO: this should be refactored into e.g. SearchWithCache.
+		results, err := c.Search(text)
 		if err != nil {
-			log.Fatal(err)
+			log.Println("[warn] Cache search failed:", err)
+		}
+		if results == nil {
+			log.Println("[info] Searching Spotify")
+			results, err = client.Search(ctx, text, searchType)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if err := c.UpsertSearch(text, results); err != nil {
+				log.Println("[warn] Failed to upsert search into cache:", err)
+			}
+		} else {
+			log.Println("[info] Found results in cache")
 		}
 
 		// handle album results
@@ -89,7 +114,7 @@ func main() {
 			if err != nil {
 				fmt.Println("err:", err)
 				continue
-			} 
+			}
 			if has[0] {
 				fmt.Println("user already has album, considered a match")
 				break
