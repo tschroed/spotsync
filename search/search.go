@@ -12,7 +12,7 @@ import (
 
 	"github.com/zmb3/spotify/v2"
 
-//	"github.com/tschroed/spotsync"
+	"github.com/tschroed/spotsync"
 	"github.com/tschroed/spotsync/authserver"
 	"github.com/tschroed/spotsync/cache"
 	"github.com/tschroed/spotsync/media"
@@ -22,11 +22,59 @@ const (
 	searchType = spotify.SearchTypeArtist | spotify.SearchTypeAlbum
 )
 
+const (
+	MATCH_UNKNOWN = iota
+	MATCH_EXACT   = iota
+	MATCH_PREFIX  = iota
+)
+
 var (
 	cFlag = flag.String("c", "/home/trevors/spotify.db", "Spotify cache sqlite database")
 	dFlag = flag.Bool("d", false, "Enable debugging")
 	lFlag = flag.String("l", "/usr/local/mp3", "Location of mp3 library")
 )
+
+func debug(format string, v ...any) {
+	log.Printf(format, v...)
+}
+
+func bestMatch(artistName string, albumName string, albums []spotify.SimpleAlbum) (*spotify.SimpleAlbum, int) {
+	art := spotsync.CanonicalizeName(artistName)
+	alb := spotsync.CanonicalizeName(albumName)
+	for _, al := range albums {
+		cn := spotsync.CanonicalizeName(al.Name)
+		debug("al cn: %s\n", cn)
+		if cn != alb {
+			debug("%s is not %s\n", alb, cn)
+			continue
+		}
+		for _, ar := range al.Artists {
+			cn = spotsync.CanonicalizeName(ar.Name)
+			debug("ar cn: %s\n", cn)
+			if cn == art {
+				debug("%s / %s seems to be an exact match\n", ar.Name, al.Name)
+				return &al, MATCH_EXACT
+			}
+		}
+	}
+	for _, al := range albums {
+		cn := spotsync.CanonicalizeName(al.Name)
+		debug("al cn: %s\n", cn)
+		if !strings.HasPrefix(cn, alb) {
+			debug("%s is not %s\n", alb, cn)
+			continue
+		}
+		for _, ar := range al.Artists {
+			cn = spotsync.CanonicalizeName(ar.Name)
+			debug("ar cn: %s\n", cn)
+			if strings.HasPrefix(cn, art) {
+				debug("%s / %s seems to be a match\n", ar.Name, al.Name)
+				return &al, MATCH_PREFIX
+			}
+		}
+	}
+	return nil, MATCH_UNKNOWN
+}
 
 func main() {
 	flag.Parse()
@@ -103,9 +151,17 @@ func main() {
 			continue
 		}
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Println("Albums:")
 		toAdd := make([]spotify.SimpleAlbum, 0)
-		for _, item := range results.Albums.Albums {
+		albums := results.Albums.Albums
+		res, _ := bestMatch(alb.Artist, alb.Name, albums)
+		if res == nil {
+			log.Println("[warn] Found no good match.")
+			continue
+		}
+		albums = []spotify.SimpleAlbum{*res}
+		fmt.Println("Albums:")
+		for _, item := range albums {
+
 			fmt.Println("   ", item.Name)
 			fmt.Println("    >> Artists:")
 			for _, artist := range item.Artists {
