@@ -36,13 +36,17 @@ func New(filename string, o Options) (*Cache, error) {
 	}, nil
 }
 
+func (c *Cache) Close() error {
+	return c.db.Close()
+}
+
 func (c *Cache) debugPrintln(v ...any) {
 	if c.debug {
-		fmt.Println(v)
+		fmt.Println(v...)
 	}
 }
 
-func (c *Cache) upsertAny(table string, key string, value any) error {
+func (c *Cache) upsertAny(table string, keyName string, key string, value any) error {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	if err := encoder.Encode(value); err != nil {
@@ -50,8 +54,9 @@ func (c *Cache) upsertAny(table string, key string, value any) error {
 	}
 	s := buf.String()
 	c.debugPrintln("encoding:", s)
-	q := fmt.Sprintf("INSERT INTO %s VALUES(?,?,?);", table)
-	res, err := c.db.Exec(q, key, time.Now(), s)
+	q := fmt.Sprintf("INSERT OR REPLACE INTO %s VALUES(?,?,?);", table)
+	now := time.Now()
+	res, err := c.db.Exec(q, key, now, s, key)
 	if err != nil {
 		return err
 	}
@@ -60,7 +65,7 @@ func (c *Cache) upsertAny(table string, key string, value any) error {
 }
 
 func (c *Cache) UpsertSearch(search string, result *spotify.SearchResult) error {
-	return c.upsertAny(searchesTable, search, result)
+	return c.upsertAny(searchesTable, searchesKey, search, result)
 }
 
 func (c *Cache) lookupAny(table string, keyName string, key string, out any) error {
