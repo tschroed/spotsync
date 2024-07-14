@@ -23,9 +23,10 @@ const (
 )
 
 const (
-	MATCH_UNKNOWN = iota
-	MATCH_EXACT   = iota
-	MATCH_PREFIX  = iota
+	MATCH_UNKNOWN    = iota
+	MATCH_EXACT      = iota
+	MATCH_SRC_PREFIX = iota
+	MATCH_DST_PREFIX = iota
 )
 
 var (
@@ -35,7 +36,9 @@ var (
 )
 
 func debug(format string, v ...any) {
-	log.Printf(format, v...)
+	if *dFlag {
+		log.Printf(format, v...)
+	}
 }
 
 func bestMatch(artistName string, albumName string, albums []spotify.SimpleAlbum) (*spotify.SimpleAlbum, int) {
@@ -52,7 +55,7 @@ func bestMatch(artistName string, albumName string, albums []spotify.SimpleAlbum
 			cn = spotsync.CanonicalizeName(ar.Name)
 			debug("ar cn: %s\n", cn)
 			if cn == art {
-				debug("%s / %s seems to be an exact match\n", ar.Name, al.Name)
+				log.Printf("%s / %s seems to be an exact match\n", ar.Name, al.Name)
 				return &al, MATCH_EXACT
 			}
 		}
@@ -68,8 +71,24 @@ func bestMatch(artistName string, albumName string, albums []spotify.SimpleAlbum
 			cn = spotsync.CanonicalizeName(ar.Name)
 			debug("ar cn: %s\n", cn)
 			if strings.HasPrefix(cn, art) {
-				debug("%s / %s seems to be a match\n", ar.Name, al.Name)
-				return &al, MATCH_PREFIX
+				log.Printf("%s / %s seems to be a match\n", ar.Name, al.Name)
+				return &al, MATCH_SRC_PREFIX
+			}
+		}
+	}
+	for _, al := range albums {
+		cn := spotsync.CanonicalizeName(al.Name)
+		debug("al cn: %s\n", cn)
+		if !strings.HasPrefix(alb, cn) {
+			debug("%s is not %s\n", alb, cn)
+			continue
+		}
+		for _, ar := range al.Artists {
+			cn = spotsync.CanonicalizeName(ar.Name)
+			debug("ar cn: %s\n", cn)
+			if strings.HasPrefix(cn, art) {
+				log.Printf("%s / %s seems to be a match\n", ar.Name, al.Name)
+				return &al, MATCH_DST_PREFIX
 			}
 		}
 	}
@@ -124,7 +143,10 @@ func main() {
 	}
 
 	for alb := range m.Albums() {
-		text := fmt.Sprintf("artist:\"%s\" album:\"%s\"", alb.Artist, alb.Name)
+		artName := strings.TrimPrefix(alb.Artist, "The ")
+		albName := strings.TrimPrefix(alb.Name, "The ")
+//		text := fmt.Sprintf("artist:\"%s\" album:\"%s\"", artName, albName)
+		text := fmt.Sprintf("%s %s", artName, albName)
 		fmt.Println(">> Searching for", text)
 
 		// TODO: this should be refactored into e.g. SearchWithCache.
@@ -153,12 +175,12 @@ func main() {
 		reader := bufio.NewReader(os.Stdin)
 		toAdd := make([]spotify.SimpleAlbum, 0)
 		albums := results.Albums.Albums
-		res, _ := bestMatch(alb.Artist, alb.Name, albums)
+		res, match := bestMatch(artName, albName, albums)
 		if res == nil {
 			log.Println("[warn] Found no good match.")
-			continue
+		} else {
+			albums = []spotify.SimpleAlbum{*res}
 		}
-		albums = []spotify.SimpleAlbum{*res}
 		fmt.Println("Albums:")
 		for _, item := range albums {
 
@@ -173,30 +195,35 @@ func main() {
 				continue
 			}
 			if has[0] {
-				fmt.Println("user already has album, considered a match")
+				fmt.Println("user already has ", item.Artists[0].Name, "/", item.Name, "considered a match")
 				break
 			}
-			fa, err := client.GetAlbum(ctx, item.ID)
-			if err != nil {
-				log.Print(err)
-			}
-			fmt.Println("    >> Tracks:")
-			for _, track := range fa.Tracks.Tracks { // Assume just 1 page
-				fmt.Println("        ", track.Name)
-			}
-			fmt.Print("Add to library? [y/N] => ")
-			r, _ := reader.ReadString('\n')
-			r = strings.TrimSpace(r)
-			if r == "y" || r == "Y" {
+			if match == MATCH_EXACT {
 				toAdd = append(toAdd, item)
-				break
+			} else {
+				log.Println("[info] Match was not exact, so prompting...")
+				fa, err := client.GetAlbum(ctx, item.ID)
+				if err != nil {
+					log.Print(err)
+				}
+				fmt.Println("    >> Tracks:")
+				for _, track := range fa.Tracks.Tracks { // Assume just 1 page
+					fmt.Println("        ", track.Name)
+				}
+				fmt.Print("Add to library? [y/N] => ")
+				r, _ := reader.ReadString('\n')
+				r = strings.TrimSpace(r)
+				if r == "y" || r == "Y" {
+					toAdd = append(toAdd, item)
+					break
+				}
 			}
 		}
 		if len(toAdd) > 0 {
 			fmt.Println("Adding...")
 			ids := make([]spotify.ID, len(toAdd))
 			for i, alb := range toAdd {
-				fmt.Println("    ", alb.Artists[0].Name, " / ", alb.Name)
+				fmt.Println("    ", alb.Artists[0].Name, " / ", albName)
 				ids[i] = alb.ID
 			}
 			err = client.AddAlbumsToLibrary(ctx, ids...)
